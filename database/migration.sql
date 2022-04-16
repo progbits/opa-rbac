@@ -4,12 +4,13 @@ CREATE TABLE rbac_project (
 );
 
 CREATE TABLE rbac_user (
-    id INTEGER PRIMARY KEY
+    id   INTEGER PRIMARY KEY,
+    name TEXT
 );
 
 CREATE TABLE rbac_role (
-    id        INTEGER PRIMARY KEY,
-    role_name TEXT
+    id   INTEGER PRIMARY KEY,
+    name TEXT
 );
 
 CREATE TABLE rbac_project_user_role (
@@ -19,8 +20,8 @@ CREATE TABLE rbac_project_user_role (
 );
 
 CREATE TABLE rbac_permission (
-    id              INTEGER PRIMARY KEY,
-    permission_name TEXT
+    id   INTEGER PRIMARY KEY,
+    name TEXT
 );
 
 CREATE TABLE rbac_role_permission (
