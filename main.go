@@ -123,7 +123,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusForbidden)
 }
 
-func (s *Server) writePolicyData(data []byte) error {
+// loadRbacData loads the most recent RBAC data from the database in JSON
+// format, ready to be consumed by dependant policies.
+func (s *Server) loadRbacData() ([]byte, error) {
+	row := s.db.QueryRow("SELECT * FROM rbac_data;")
+	data := make([]byte, 0)
+	err := row.Scan(&data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// writeRbacData writes the specified RBAC data to the OPA store, where is
+// accessible on policy evaluation. RBAC data is written to the location
+// specified by `policyDataPath`.
+func (s *Server) writeRbacData(data []byte) error {
 	store := s.pluginManager.Store
 	path, ok := storage.ParsePath(policyDataPath)
 	if !ok {
