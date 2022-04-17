@@ -9,6 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/open-policy-agent/opa/plugins"
 	"github.com/open-policy-agent/opa/plugins/discovery"
+	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/storage"
 	"github.com/open-policy-agent/opa/storage/inmem"
 	"github.com/rs/xid"
@@ -96,13 +97,14 @@ func (s *Server) Start() {
 
 type RbacCheckRequest struct {
 	UserId     string `json:"user_id,omitempty"`
+	Project    string `json:"project,omitempty"`
 	Object     string `json:"object,omitempty"`
 	Permission string `json:"permission,omitempty"`
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	check := RbacCheckRequest{}
-	err := json.NewDecoder(r.Body).Decode(&check)
+	input := RbacCheckRequest{}
+	err := json.NewDecoder(r.Body).Decode(&input)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -122,13 +124,57 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Build the query.
+	allow := false
+	query := func(txn storage.Transaction) error {
+		result, err := rego.New(
+			rego.Query("data.example.rbac.allow"),
+			rego.Input(input),
+			rego.Compiler(s.pluginManager.GetCompiler()),
+			rego.Store(s.pluginManager.Store),
+			rego.Dump(os.Stdout),
+			rego.Trace(true),
+			rego.Transaction(txn)).Eval(context.Background())
+		if err != nil {
+			return err
+		} else if len(result) == 0 {
+			return errors.New("Undefined query.")
+		} else if len(result) > 1 {
+			return errors.New("Attempt to evaluate non-boolean decision.")
+		} else if value, ok := result[0].Expressions[0].Value.(bool); !ok {
+			return errors.New("Attempt to evaluate non-boolean decision.")
+		} else {
+			allow = value
+		}
+		return nil
+	}
+
+	// Execute the query.
+	err = storage.Txn(
+		context.Background(),
+		s.pluginManager.Store,
+		storage.TransactionParams{},
+		query)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	log.Printf(
-		"Check request: Can '%s' '%s' '%s'?",
-		check.UserId,
-		check.Permission,
-		check.Object)
+		"Check request: Can '%s' '%s' '%s' in project '%s'? %v",
+		input.UserId,
+		input.Permission,
+		input.Object,
+		input.Project,
+		allow)
+	if allow {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	w.WriteHeader(http.StatusForbidden)
 }
 
