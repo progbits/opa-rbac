@@ -8,6 +8,7 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/open-policy-agent/opa/plugins"
+	"github.com/open-policy-agent/opa/plugins/discovery"
 	"github.com/open-policy-agent/opa/storage"
 	"github.com/open-policy-agent/opa/storage/inmem"
 	"github.com/rs/xid"
@@ -18,6 +19,7 @@ import (
 
 const (
 	databaseFilePathEnvVar = "OPA_RBAC_DATABASE_FILE"
+	opaConfigEnvVar        = "OPA_CONFIG"
 	policyDataPath         = "/rbac/data"
 )
 
@@ -50,11 +52,40 @@ func NewServer() (*Server, error) {
 	}
 	server.httpServer = httpServer
 
-	pluginManager, err := plugins.New([]byte{}, xid.New().String(), inmem.New())
+	// Try and load the OPA configuration.
+	opaConfigFilePath := os.Getenv(opaConfigEnvVar)
+	if opaConfigFilePath == "" {
+		log.Fatalf("%s not set.", opaConfigEnvVar)
+	}
+	opaConfigBuf, err := os.ReadFile(opaConfigFilePath)
 	if err != nil {
 		return nil, err
 	}
+
+	// Create a new plugin manager so we can register the `Discovery` plugin.
+	pluginManager, err := plugins.New(opaConfigBuf, xid.New().String(), inmem.New())
+	if err != nil {
+		return nil, err
+	}
+
+	// Register the `Discovery` plugin to periodically download new bundles.
+	disc, err := discovery.New(pluginManager)
+	if err != nil {
+		return nil, err
+	}
+	pluginManager.Register("discovery", disc)
+
 	server.pluginManager = pluginManager
+
+	// Start the plugin engine
+	err = pluginManager.Init(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	err = pluginManager.Start(context.Background())
+	if err != nil {
+		return nil, err
+	}
 
 	return server, nil
 }
