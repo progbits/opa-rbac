@@ -109,7 +109,16 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.writePolicyData([]byte("hello"))
+	// Load the most recent RBAC data from the database.
+	rbacData, err := s.loadRbacData()
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Write the RBAC data to be used by the query.
+	err = s.writeRbacData(rbacData)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
