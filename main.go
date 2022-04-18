@@ -111,16 +111,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load the most recent RBAC data from the database.
-	rbacData, err := s.loadRbacData()
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// Write the RBAC data to be used by the query.
-	err = s.writeRbacData(rbacData)
+	// Load the latest RBAC database.
+	err = s.loadData()
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -178,39 +170,33 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusForbidden)
 }
 
-// loadRbacData loads the most recent RBAC data from the database in JSON
-// format, ready to be consumed by dependant policies.
-func (s *Server) loadRbacData() (map[string]interface{}, error) {
-	row := s.db.QueryRow("SELECT * FROM rbac_data;")
+// loadData loads the most recent RBAC data from the database in JSON
+// format and loads it to the configured Rego.Store where it is
+// accessible by the RBAC policy.
+func (s *Server) loadData() error {
+	// Load the RBAC database in JSON format.
 	raw := ""
+	row := s.db.QueryRow("SELECT * FROM rbac_data;")
 	err := row.Scan(&raw)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	data := make(map[string]interface{})
 	err = json.NewDecoder(bytes.NewReader([]byte(raw))).Decode(&data)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return data, nil
-}
-
-// writeRbacData writes the specified RBAC data to the OPA store, where is
-// accessible on policy evaluation. RBAC data is written to the location
-// specified by `policyDataPath`.
-func (s *Server) writeRbacData(data map[string]interface{}) error {
-	store := s.pluginManager.Store
+	// Store the RBAC data in the configured Rego.Store.
 	path := make([]string, 0)
-
+	store := s.pluginManager.Store
 	txn := storage.NewTransactionOrDie(context.Background(), store, storage.WriteParams)
-	err := store.Write(context.Background(), txn, storage.AddOp, path, data)
+	err = store.Write(context.Background(), txn, storage.AddOp, path, data)
 	if err != nil {
 		store.Abort(context.Background(), txn)
 		return err
 	}
-
 	err = store.Commit(context.Background(), txn)
 	if err != nil {
 		return err
