@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/plugins"
-	"github.com/open-policy-agent/opa/plugins/discovery"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/storage"
 	"github.com/open-policy-agent/opa/storage/inmem"
@@ -20,14 +21,13 @@ import (
 
 const (
 	databaseFilePathEnvVar = "OPA_RBAC_DATABASE_FILE"
-	opaConfigEnvVar        = "OPA_CONFIG"
-	policyDataPath         = "/rbac/data"
 )
 
 type Server struct {
 	db            *sql.DB
 	httpServer    *http.Server
 	pluginManager *plugins.Manager
+	compiler      *ast.Compiler
 }
 
 func NewServer() (*Server, error) {
@@ -53,40 +53,40 @@ func NewServer() (*Server, error) {
 	}
 	server.httpServer = httpServer
 
-	// Try and load the OPA configuration.
-	opaConfigFilePath := os.Getenv(opaConfigEnvVar)
-	if opaConfigFilePath == "" {
-		log.Fatalf("%s not set.", opaConfigEnvVar)
-	}
-	opaConfigBuf, err := os.ReadFile(opaConfigFilePath)
+	// Create a new plugin manager without any configuration.
+	pluginManager, err := plugins.New([]byte{}, xid.New().String(), inmem.New())
 	if err != nil {
 		return nil, err
 	}
-
-	// Create a new plugin manager so we can register the `Discovery` plugin.
-	pluginManager, err := plugins.New(opaConfigBuf, xid.New().String(), inmem.New())
-	if err != nil {
-		return nil, err
-	}
-
-	// Register the `Discovery` plugin to periodically download new bundles.
-	disc, err := discovery.New(pluginManager)
-	if err != nil {
-		return nil, err
-	}
-	pluginManager.Register("discovery", disc)
-
 	server.pluginManager = pluginManager
 
-	// Start the plugin engine
-	err = pluginManager.Init(context.Background())
+	// Compile the RBAC module.
+	module := `
+		package rbac
+
+		default allow = false
+
+		allow {
+			# Look up the list of projects the user has access too.
+			project_roles := data.roles[input.user_id]
+
+			# For each of the roles held by the user for the named project.
+			project_role := project_roles[input.project]
+			pr := project_role[_]
+
+			# Lookup the permissions for the roles.
+			permissions := data.permissions[pr]
+
+			# For each role permission, check if there is a match.
+			p := permissions[_]
+			p == concat("", [input.permission, ":", input.object])
+		}
+	`
+	compiler, err := ast.CompileModules(map[string]string{"rbac": module})
 	if err != nil {
 		return nil, err
 	}
-	err = pluginManager.Start(context.Background())
-	if err != nil {
-		return nil, err
-	}
+	server.compiler = compiler
 
 	return server, nil
 }
@@ -130,14 +130,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// Build the query.
 	allow := false
 	query := func(txn storage.Transaction) error {
-		result, err := rego.New(
-			rego.Query("data.example.rbac.allow"),
+		r := rego.New(
+			rego.Query("data.rbac.allow"),
 			rego.Input(input),
-			rego.Compiler(s.pluginManager.GetCompiler()),
+			rego.Compiler(s.compiler),
 			rego.Store(s.pluginManager.Store),
-			rego.Dump(os.Stdout),
-			rego.Trace(true),
-			rego.Transaction(txn)).Eval(context.Background())
+			rego.Transaction(txn))
+
+		result, err := r.Eval(context.Background())
 		if err != nil {
 			return err
 		} else if len(result) == 0 {
@@ -180,43 +180,32 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 // loadRbacData loads the most recent RBAC data from the database in JSON
 // format, ready to be consumed by dependant policies.
-func (s *Server) loadRbacData() ([]byte, error) {
+func (s *Server) loadRbacData() (map[string]interface{}, error) {
 	row := s.db.QueryRow("SELECT * FROM rbac_data;")
-	data := make([]byte, 0)
-	err := row.Scan(&data)
+	raw := ""
+	err := row.Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
+
+	data := make(map[string]interface{})
+	err = json.NewDecoder(bytes.NewReader([]byte(raw))).Decode(&data)
+	if err != nil {
+		return nil, err
+	}
+
 	return data, nil
 }
 
 // writeRbacData writes the specified RBAC data to the OPA store, where is
 // accessible on policy evaluation. RBAC data is written to the location
 // specified by `policyDataPath`.
-func (s *Server) writeRbacData(data []byte) error {
+func (s *Server) writeRbacData(data map[string]interface{}) error {
 	store := s.pluginManager.Store
-	path, ok := storage.ParsePath(policyDataPath)
-	if !ok {
-		return errors.New("Failed to parse path.")
-	}
+	path := make([]string, 0)
 
 	txn := storage.NewTransactionOrDie(context.Background(), store, storage.WriteParams)
-	_, err := store.Read(context.Background(), txn, path)
-	if err != nil {
-		// Not found is fine, we'll just create the directory.
-		if !storage.IsNotFound(err) {
-			store.Abort(context.Background(), txn)
-			return err
-		}
-		err = storage.MakeDir(context.Background(), store, txn, path)
-		if err != nil {
-			store.Abort(context.Background(), txn)
-			return err
-		}
-	}
-
-	// Directory now exists, so we are safe to write.
-	err = store.Write(context.Background(), txn, storage.ReplaceOp, path, data)
+	err := store.Write(context.Background(), txn, storage.AddOp, path, data)
 	if err != nil {
 		store.Abort(context.Background(), txn)
 		return err
