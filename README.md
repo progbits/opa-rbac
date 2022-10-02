@@ -91,7 +91,7 @@ John has permission to `create` an `account` in project `Foo`.
 
 ```shell
 curl -w "%{http_code}\n" localhost:8080/v1/check -H 'content-type:application/json' -d '{
-    "user_id": "John", 
+    "user_id": "1",
     "project": "Foo", 
     "object": "account", 
     "permission": "create"
@@ -103,7 +103,7 @@ John has permission to `close` an `account` in project `Foo`.
 
 ```shell
 curl -w "%{http_code}\n" localhost:8080/v1/check -H 'content-type:application/json' -d '{
-    "user_id": "John", 
+    "user_id": "1",
     "project": "Foo", 
     "object": "account", 
     "permission": "close"
@@ -115,7 +115,7 @@ John __does not__ have permission to `close` an `account` in project `Bar`.
 
 ```shell
 curl -w "%{http_code}\n" localhost:8080/v1/check -H 'content-type:application/json' -d '{
-    "user_id": "John", 
+    "user_id": "1",
     "project": "Bar", 
     "object": "account", 
     "permission": "close"
@@ -126,7 +126,7 @@ curl -w "%{http_code}\n" localhost:8080/v1/check -H 'content-type:application/js
 Sally has permission to `create` a `payment` in project `Bar`.
 ```shell
 curl -w "%{http_code}\n" localhost:8080/v1/check -H 'content-type:application/json' -d '{
-    "user_id": "Sally", 
+    "user_id": "2",
     "project": "Bar", 
     "object": "payment", 
     "permission": "create"

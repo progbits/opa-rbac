@@ -79,7 +79,7 @@ func TestServer(t *testing.T) {
 	}{
 		{
 			body: RbacCheckRequest{
-				UserId:     "John",
+				UserId:     "1",
 				Project:    "Foo",
 				Object:     "account",
 				Permission: "create",
@@ -88,7 +88,7 @@ func TestServer(t *testing.T) {
 		},
 		{
 			body: RbacCheckRequest{
-				UserId:     "John",
+				UserId:     "1",
 				Project:    "Foo",
 				Object:     "account",
 				Permission: "close",
@@ -97,7 +97,7 @@ func TestServer(t *testing.T) {
 		},
 		{
 			body: RbacCheckRequest{
-				UserId:     "John",
+				UserId:     "1",
 				Project:    "Bar",
 				Object:     "account",
 				Permission: "close",
@@ -106,7 +106,7 @@ func TestServer(t *testing.T) {
 		},
 		{
 			body: RbacCheckRequest{
-				UserId:     "Sally",
+				UserId:     "2",
 				Project:    "Bar",
 				Object:     "payment",
 				Permission: "create",
