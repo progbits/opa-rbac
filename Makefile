@@ -10,6 +10,9 @@ build: deps
 deps:
 	go mod download
 
+test:
+	go test ./...
+
 fmt:
 	go fmt ./...
 
