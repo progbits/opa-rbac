@@ -43,8 +43,9 @@ evaluates the decision, returning `200` on success and `403` on failure.
 
 ### Example
 
-Given the following fictional RBAC database with 2 projects, 2 users, 2 roles
-and 2 permissions per role:
+The following fictional RBAC database describes a configuration with 2
+projects (Foo and Bar), 2 users (John and Sally), 2 roles (account-manager
+and finance-manager) and 2 permissions per role:
 
 ```sql
 INSERT INTO rbac_project(id, name)
@@ -75,6 +76,16 @@ VALUES (1, 1), -- Account Managers can create:account.
        (2, 3), -- Finance Managers can create:payment.
        (2, 4); -- Finance Managers can delete:payment.
 ```
+
+This example database can be found at [`bootstrap-simple.sql`](https://github.com/progbits/opa-rbac/blob/main/database/bootstrap-simple.sql)
+and can be applied to the database created in [Getting Started](#getting-started):
+
+```shell
+sqlite3 /tmp/opa-rbac.sqlite < database/bootstrap-simple.sql
+```
+
+Once the RBAC database has been populated with the example schema, permission
+checks can be evaluated.
 
 John has permission to `create` an `account` in project `Foo`. 
 
