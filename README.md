@@ -1,5 +1,7 @@
 # OPA-RBAC
 
+[![Build](https://github.com/progbits/opa-rbac/actions/workflows/build.yaml/badge.svg?branch=main)](https://github.com/progbits/opa-rbac/actions/workflows/build.yaml)
+
 A simple RBAC service based on OPA and SQLite.
 
 ## Getting Started
